@@ -9,6 +9,7 @@ CBM模块:CONV+BN+MISH
 ====================================================# 
 '''
 
+
 # Mish激活函数
 class Mish(nn.Module):
     def __init__(self):
@@ -17,6 +18,7 @@ class Mish(nn.Module):
     def forward(self, x):
         return x * torch.tanh(F.softplus(x))
         # return x * torch.tanh(torch.log(1 + torch.exp(x)))
+
 
 # 卷积块
 class BasicConv(nn.Module):
@@ -40,10 +42,11 @@ CSPdarknet结构模块
 ====================================================# 
 '''
 
+
 # 残差模块
-class Resblock(nn.Module):
+class ResBlock(nn.Module):
     def __init__(self, channels, hidden_channels = None):
-        super(Resblock, self).__init__()
+        super(ResBlock, self).__init__()
 
         # 降维参数选择
         if hidden_channels == None:
@@ -63,9 +66,11 @@ class Resblock(nn.Module):
 num_blocks: CSP模块数量
 first: 是否第一个部分的CSP
 '''
-class Resblock_body(nn.Module):
+
+
+class ResBlock_Body(nn.Module):
     def __init__(self, in_channels, out_channels, num_blocks, first):
-        super(Resblock_body, self).__init__()
+        super(ResBlock_Body, self).__init__()
 
         # 下采样
         self.downsample = BasicConv(in_channels, out_channels, 3, stride=2)
@@ -73,7 +78,7 @@ class Resblock_body(nn.Module):
             self.split_conv0 = BasicConv(out_channels, out_channels, 1)
             self.split_conv1 = BasicConv(out_channels, out_channels, 1)
             self.blocks_conv = nn.Sequential(
-                Resblock(channels=out_channels, hidden_channels=out_channels//2),
+                ResBlock(channels=out_channels, hidden_channels=out_channels//2),
                 BasicConv(out_channels, out_channels, 1)
             )
             self.concat_conv = BasicConv(out_channels*2, out_channels, 1)
@@ -81,7 +86,9 @@ class Resblock_body(nn.Module):
             self.split_conv0 = BasicConv(out_channels, out_channels//2, 1)
             self.split_conv1 = BasicConv(out_channels, out_channels//2, 1)
             self.blocks_conv = nn.Sequential(
-                *[Resblock(channels=out_channels, hidden_channels=out_channels // 2)],
+                *[ResBlock(channels=out_channels, hidden_channels=out_channels // 2)],
                 BasicConv(out_channels//2, out_channels//2, 1)
             )
+
+
 
