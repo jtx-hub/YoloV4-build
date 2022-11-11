@@ -61,11 +61,12 @@ class Upsample(nn.Module):
 ===================================================# 
 '''
 def make_three_conv(filters_list, in_filters):
-    pass
-
-
-
-
+    m = nn.Sequential(
+        conv2d(in_filters, filters_list[0], kernek_size=1),
+        conv2d(filters_list[0], filters_list[1], kernek_size=3),
+        conv2d(filters_list[1], filters_list[0], kernek_size=1)
+    )
+    return m
 
 
 '''
@@ -74,5 +75,24 @@ def make_three_conv(filters_list, in_filters):
 ===================================================# 
 '''
 def make_five_conv(filters_list, in_filters):
-    pass
+    m = nn.Sequential(
+        conv2d(in_filters, filters_list[0], kernek_size=1),
+        conv2d(filters_list[0], filters_list[1], kernek_size=3),
+        conv2d(filters_list[1], filters_list[0], kernek_size=1),
+        conv2d(filters_list[0], filters_list[1], kernek_size=3),
+        conv2d(filters_list[1], filters_list[0], kernek_size=1)
+    )
+    return m
 
+
+'''
+#===================================================
+yolo最后的输出
+===================================================# 
+'''
+def yolo_head(filters_list, in_filters):
+    m = nn.Sequential(
+        conv2d(in_filters, filters_list[0], kernek_size=3),
+        nn.Conv2d(filters_list[0], filters_list[1], 1)
+    )
+    return m

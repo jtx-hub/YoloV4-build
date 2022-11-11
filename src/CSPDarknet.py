@@ -10,11 +10,6 @@ import torch.nn.functional as F
 CBM模块:CONV+BN+MISH
 ===================================================# 
 '''
-<<<<<<< HEAD
-=======
-
-
->>>>>>> f6c31e8ee2c79f6c7901bf2677e430a7cd056cfd
 # Mish激活函数
 class Mish(nn.Module):
     def __init__(self):
@@ -46,11 +41,6 @@ class BasicConv(nn.Module):
 CSP模块（CSP1和CSP2结构有区别！）
 ===================================================# 
 '''
-<<<<<<< HEAD
-=======
-
-
->>>>>>> f6c31e8ee2c79f6c7901bf2677e430a7cd056cfd
 # 残差模块
 class ResBlock(nn.Module):
     def __init__(self, channels, hidden_channels = None):
@@ -74,11 +64,6 @@ class ResBlock(nn.Module):
 num_blocks: CSP模块数量
 first: 是否第一个部分的CSP
 '''
-<<<<<<< HEAD
-=======
-
-
->>>>>>> f6c31e8ee2c79f6c7901bf2677e430a7cd056cfd
 class ResBlock_Body(nn.Module):
     def __init__(self, in_channels, out_channels, num_blocks, first):
         super(ResBlock_Body, self).__init__()
@@ -89,11 +74,8 @@ class ResBlock_Body(nn.Module):
             self.split_conv0 = BasicConv(out_channels, out_channels, 1)
             self.split_conv1 = BasicConv(out_channels, out_channels, 1)
             self.blocks_conv = nn.Sequential(
-<<<<<<< HEAD
                 ResBlock(channels=out_channels, hidden_channels=out_channels // 2),
-=======
                 ResBlock(channels=out_channels, hidden_channels=out_channels//2),
->>>>>>> f6c31e8ee2c79f6c7901bf2677e430a7cd056cfd
                 BasicConv(out_channels, out_channels, 1)
             )
             self.concat_conv = BasicConv(out_channels*2, out_channels, 1)
@@ -101,12 +83,9 @@ class ResBlock_Body(nn.Module):
             self.split_conv0 = BasicConv(out_channels, out_channels//2, 1)
             self.split_conv1 = BasicConv(out_channels, out_channels//2, 1)
             self.blocks_conv = nn.Sequential(
-<<<<<<< HEAD
                 # *列表解耦成参数
                 *[ResBlock(channels=out_channels//2) for _ in range(num_blocks)],
-=======
                 *[ResBlock(channels=out_channels, hidden_channels=out_channels // 2)],
->>>>>>> f6c31e8ee2c79f6c7901bf2677e430a7cd056cfd
                 BasicConv(out_channels//2, out_channels//2, 1)
             )
             self.concat_conv = BasicConv(out_channels, out_channels, 1)
