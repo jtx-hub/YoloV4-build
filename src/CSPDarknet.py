@@ -164,32 +164,40 @@ def load_model_pth(model, pth):
     pretrained_dict = torch.load(pth, map_location=devcie)
     # 匹配
     matched_dict = {}
-    for k, v in model_dict.items():
-        if k.find("backbone") == -1:
-            key = "backbone." + k
-            if np.shape(pretrained_dict[key]) == np.shape(v):
-                matched_dict[k] = v
-
+    #
+    # for k, v in model_dict.items():
+    #     if k.find("backbone") == -1:
+    #         key = "backbone." + k
+    #         if np.shape(pretrained_dict[key]) == np.shape(v):
+    #             matched_dict[k] = v
+    #
+    for k,v in pretrained_dict.items():
+        if np.shape(model_dict[k]) == np.shape(v):
+            matched_dict[k] = v
+        else:
+            print('un matched layers: %s'%k)
     for key in matched_dict:
         print('pretrained items: ', key)
-
     # 打印匹配情况
+    print(len(model_dict.keys()), len(pretrained_dict.keys()))
     print("%d layers matched, %d layers miss"%(len(matched_dict.keys()), len(model_dict)-len(matched_dict.keys())))
     model_dict.update(matched_dict)
     model.load_state_dict(model_dict)
     return model
 
 
-def darknet53(pretrained):
-    model = CSPDarkNet([1, 2, 8, 8, 4])
-    load_model_pth(model, pretrained)
-
-
 '''
 #===================================================
-Main函数
+测试函数
 ===================================================# 
 '''
+def darknet53(pretrained):
+    model = CSPDarkNet([1, 2, 8, 8, 4])
+    if pretrained:
+        load_model_pth(model, pretrained)
+    return model
+#
+#
 if __name__ == "__main__":
     # CoCo数据集的预训练权重
     coco_weights_path = '../pth/yolo4_weights_my.pth'
