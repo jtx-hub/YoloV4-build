@@ -1,3 +1,5 @@
+import math
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -6,9 +8,8 @@ import torch.nn.functional as F
 '''
 #===================================================
 CBM模块:CONV+BN+MISH
-====================================================# 
+===================================================# 
 '''
-
 # Mish激活函数
 class Mish(nn.Module):
     def __init__(self):
@@ -17,6 +18,7 @@ class Mish(nn.Module):
     def forward(self, x):
         return x * torch.tanh(F.softplus(x))
         # return x * torch.tanh(torch.log(1 + torch.exp(x)))
+
 
 # 卷积块
 class BasicConv(nn.Module):
@@ -36,14 +38,13 @@ class BasicConv(nn.Module):
 
 '''
 #===================================================
-CSPdarknet结构模块
-====================================================# 
+CSP模块（CSP1和CSP2结构有区别！）
+===================================================# 
 '''
-
 # 残差模块
-class Resblock(nn.Module):
+class ResBlock(nn.Module):
     def __init__(self, channels, hidden_channels = None):
-        super(Resblock, self).__init__()
+        super(ResBlock, self).__init__()
 
         # 降维参数选择
         if hidden_channels == None:
@@ -63,17 +64,17 @@ class Resblock(nn.Module):
 num_blocks: CSP模块数量
 first: 是否第一个部分的CSP
 '''
-class Resblock_body(nn.Module):
+class ResBlock_Body(nn.Module):
     def __init__(self, in_channels, out_channels, num_blocks, first):
-        super(Resblock_body, self).__init__()
+        super(ResBlock_Body, self).__init__()
 
         # 下采样
-        self.downsample = BasicConv(in_channels, out_channels, 3, stride=2)
+        self.downsample_conv = BasicConv(in_channels, out_channels, 3, stride=2)
         if first:
             self.split_conv0 = BasicConv(out_channels, out_channels, 1)
             self.split_conv1 = BasicConv(out_channels, out_channels, 1)
             self.blocks_conv = nn.Sequential(
-                Resblock(channels=out_channels, hidden_channels=out_channels//2),
+                ResBlock(channels=out_channels, hidden_channels=out_channels // 2),
                 BasicConv(out_channels, out_channels, 1)
             )
             self.concat_conv = BasicConv(out_channels*2, out_channels, 1)
@@ -81,7 +82,114 @@ class Resblock_body(nn.Module):
             self.split_conv0 = BasicConv(out_channels, out_channels//2, 1)
             self.split_conv1 = BasicConv(out_channels, out_channels//2, 1)
             self.blocks_conv = nn.Sequential(
-                *[Resblock(channels=out_channels, hidden_channels=out_channels // 2)],
+                # *列表解耦成参数
+                *[ResBlock(channels=out_channels//2) for _ in range(num_blocks)],
                 BasicConv(out_channels//2, out_channels//2, 1)
             )
+            self.concat_conv = BasicConv(out_channels, out_channels, 1)
+
+    def forward(self, x):
+        x = self.downsample(x)
+        x0 = self.split_conv0(x)
+        x1 = self.split_conv1(x)
+        x1 = self.blocks_conv(x1)
+        x = torch.cat([x1, x0], dim=1)
+        x = self.concat_conv(x)
+
+
+'''
+----------------------------------------------------
+#===================================================
+BackBone结构
+CSP[1,2,8,8,4]
+CSPX = CBM + CSP + CBM(ResBlock_Body就已经写好了)
+===================================================# 
+----------------------------------------------------
+'''
+class CSPDarkNet(nn.Module):
+    def __init__(self, layers):
+        super(CSPDarkNet, self).__init__()
+        # 输入通道数
+        self.inplanes = 32
+        self.conv1 = BasicConv(3, self.inplanes, kernel_size=3, stride=1)
+        self.feature_channels = [64, 128, 256, 512, 1024]
+        self.stages = nn.ModuleList([
+            ResBlock_Body(self.inplanes, self.feature_channels[0], layers[0], first=True),
+            ResBlock_Body(self.feature_channels[0], self.feature_channels[1], layers[1], first=False),
+            ResBlock_Body(self.feature_channels[1], self.feature_channels[2], layers[2], first=False),
+            ResBlock_Body(self.feature_channels[2], self.feature_channels[3], layers[3], first=False),
+            ResBlock_Body(self.feature_channels[3], self.feature_channels[4], layers[4], first=False),
+        ])
+
+        # 初始化
+        for m in self.modules():
+            # 卷积初始化
+            if isinstance(m, nn.Conv2d):
+                # kernel宽高*通道数
+                n = m.kernel_size[0]*m.kernel_size[1]*m.out_channels
+                # 正态
+                m.weight.data.normal_(0, math.sqrt(2./n))
+            # BN参数初始化
+            elif isinstance(m, nn.BatchNorm2d):
+                # 伽马
+                m.weight.data.fill_(1)
+                # 贝塔
+                m.bias.data.zero_()
+
+    # 前向传播
+    def foward(self, x):
+        x = self.conv1(x)
+        x = self.stages[0](x)
+        x = self.stages[1](x)
+        out3 = self.stages[2](x)
+        out4 = self.stages[3](out3)
+        out5 = self.stages[4](out4)
+
+        return out3, out4, out5
+
+
+'''
+#===================================================
+BackBone结构+初始化预训练权重
+===================================================# 
+'''
+def load_model_pth(model, pth):
+    print("Load weights into state dict, name: %s" % (pth))
+    devcie = torch.device("gpu" if torch.cuda.is_available() else "cpu")
+    # 加载自建的初始化模型为字典格式
+    model_dict = model.state_dict()
+    # 加载预训练权重字典
+    pretrained_dict = torch.load(pth, map_location=devcie)
+    # 匹配
+    matched_dict = {}
+    for k, v in model_dict.items():
+        if k.find("backbone") == -1:
+            key = "backbone." + k
+            if np.shape(pretrained_dict[key]) == np.shape(v):
+                matched_dict[k] = v
+
+    for key in matched_dict:
+        print('pretrained items: ', key)
+
+    # 打印匹配情况
+    print("%d layers matched, %d layers miss"%(len(matched_dict.keys()), len(model_dict)-len(matched_dict.keys())))
+    model_dict.update(matched_dict)
+    model.load_state_dict(model_dict)
+    return model
+
+
+def darknet53(pretrained):
+    model = CSPDarkNet([1, 2, 8, 8, 4])
+    load_model_pth(model, pretrained)
+
+
+'''
+#===================================================
+Main函数
+===================================================# 
+'''
+if __name__ == "__main__":
+    # CoCo数据集的预训练权重
+    coco_weights_path = '../pth/yolo4_weights_my.pth'
+    backbone = darknet53(coco_weights_path)
 
