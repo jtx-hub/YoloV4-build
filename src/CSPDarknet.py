@@ -74,7 +74,6 @@ class ResBlock_Body(nn.Module):
             self.split_conv0 = BasicConv(out_channels, out_channels, 1)
             self.split_conv1 = BasicConv(out_channels, out_channels, 1)
             self.blocks_conv = nn.Sequential(
-                ResBlock(channels=out_channels, hidden_channels=out_channels // 2),
                 ResBlock(channels=out_channels, hidden_channels=out_channels//2),
                 BasicConv(out_channels, out_channels, 1)
             )
@@ -85,18 +84,19 @@ class ResBlock_Body(nn.Module):
             self.blocks_conv = nn.Sequential(
                 # *列表解耦成参数
                 *[ResBlock(channels=out_channels//2) for _ in range(num_blocks)],
-                *[ResBlock(channels=out_channels, hidden_channels=out_channels // 2)],
                 BasicConv(out_channels//2, out_channels//2, 1)
             )
             self.concat_conv = BasicConv(out_channels, out_channels, 1)
 
     def forward(self, x):
-        x = self.downsample(x)
+        x = self.downsample_conv(x)
         x0 = self.split_conv0(x)
         x1 = self.split_conv1(x)
         x1 = self.blocks_conv(x1)
         x = torch.cat([x1, x0], dim=1)
         x = self.concat_conv(x)
+
+        return x
 
 
 '''
@@ -164,20 +164,21 @@ def load_model_pth(model, pth):
     pretrained_dict = torch.load(pth, map_location=devcie)
     # 匹配
     matched_dict = {}
-    #
+
     # for k, v in model_dict.items():
     #     if k.find("backbone") == -1:
     #         key = "backbone." + k
-    #         if np.shape(pretrained_dict[key]) == np.shape(v):
-    #             matched_dict[k] = v
-    #
+    #     else:
+    #         key = k
+    #     if np.shape(pretrained_dict[key]) == np.shape(v):
+    #         matched_dict[k] = v
     for k,v in pretrained_dict.items():
         if np.shape(model_dict[k]) == np.shape(v):
             matched_dict[k] = v
         else:
             print('un matched layers: %s'%k)
-    for key in matched_dict:
-        print('pretrained items: ', key)
+    # for key in matched_dict:
+    #     print('pretrained items: ', key)
     # 打印匹配情况
     print(len(model_dict.keys()), len(pretrained_dict.keys()))
     print("%d layers matched, %d layers miss"%(len(matched_dict.keys()), len(model_dict)-len(matched_dict.keys())))
