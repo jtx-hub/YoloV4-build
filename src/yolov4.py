@@ -165,7 +165,7 @@ class YoloBody(nn.Module):
 
 if __name__ == "__main__":
     coco_weights_path = '../pth/yolo4_weights_my.pth'
-    model = YoloBody(3, 20)
+    model = YoloBody(3, 80)
     load_model_pth(model, coco_weights_path)
 
 

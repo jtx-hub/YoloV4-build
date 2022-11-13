@@ -153,11 +153,11 @@ class CSPDarkNet(nn.Module):
 # ===================================================#
 def load_model_pth(model, pth):
     print("Load weights into state dict, name: %s" % (pth))
-    devcie = torch.device("gpu" if torch.cuda.is_available() else "cpu")
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     # 加载自建的初始化模型为字典格式
     model_dict = model.state_dict()
     # 加载预训练权重字典
-    pretrained_dict = torch.load(pth, map_location=devcie)
+    pretrained_dict = torch.load(pth, map_location=device)
     # 匹配
     matched_dict = {}
 

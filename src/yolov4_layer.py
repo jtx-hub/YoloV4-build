@@ -6,6 +6,7 @@ def yolo_decode(output):
     cuda_check = output.is_cuda
     if cuda_check:
         device = output.get_device()
+
         
 
 # ----------------------------------------------------
