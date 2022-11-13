@@ -1,20 +1,12 @@
 import torch.nn as nn
 
 
-
-
 def yolo_decode(output):
     device = None
     cuda_check = output.is_cuda
     if cuda_check:
         device = output.get_device()
         
-
-
-
-
-
-
 
 # ----------------------------------------------------
 # #===================================================

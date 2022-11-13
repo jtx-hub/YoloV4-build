@@ -1,15 +1,12 @@
 import torch
 import torch.nn as nn
 from collections import OrderedDict
-
 from CSPDarknet import *
-
 
 
 # #===================================================
 # CBL模块:CONV+BN+LeakyRelu
 # ===================================================#
-
 def conv2d(filter_in, filter_out, kernel_size, stride=1):
     padding = (kernel_size-1)//2 if kernel_size else 0
     return nn.Sequential(OrderedDict([
@@ -19,18 +16,16 @@ def conv2d(filter_in, filter_out, kernel_size, stride=1):
                          ]))
 
 
-
 # #===================================================
 # SPP模块:不同尺寸的池化后堆叠
 # ===================================================#
-
 class SpatialPyramidPooling(nn.Module):
     def __init__(self, pool_sizes=[5,9,13]):
         super(SpatialPyramidPooling, self).__init__()
         self.maxpools = nn.ModuleList([nn.MaxPool2d(kernel_size=pool_size, stride=1, padding=pool_size//2) for pool_size in pool_sizes])
 
     def foward(self, x):
-        features = [maxpool(x) for maxpool in maxpools[::-1]]
+        features = [maxpool(x) for maxpool in self.maxpools[::-1]]
         features = torch.cat(features+[x], dim=1)
 
         return features
@@ -40,7 +35,6 @@ class SpatialPyramidPooling(nn.Module):
 # #===================================================
 # 卷积 + 上采样
 # ===================================================#
-
 class Upsample(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(Upsample, self).__init__()
@@ -55,12 +49,11 @@ class Upsample(nn.Module):
         return x
 
 
-'''
-#===================================================
-三次卷积块
-[512, 1024]
-===================================================# 
-'''
+
+# #===================================================
+# 三次卷积块
+# [512, 1024]
+# ===================================================#
 def make_three_conv(filters_list, in_filters):
     m = nn.Sequential(
         conv2d(in_filters, filters_list[0], kernel_size=1),
@@ -70,11 +63,10 @@ def make_three_conv(filters_list, in_filters):
     return m
 
 
-'''
-#===================================================
-五次卷积块
-===================================================# 
-'''
+
+# #===================================================
+# 五次卷积块
+# ===================================================#
 def make_five_conv(filters_list, in_filters):
     m = nn.Sequential(
         conv2d(in_filters, filters_list[0], kernel_size=1),
@@ -86,11 +78,9 @@ def make_five_conv(filters_list, in_filters):
     return m
 
 
-'''
-#===================================================
-yolo最后的输出
-===================================================# 
-'''
+# #===================================================
+# yolo最后的输出
+# ===================================================#
 def yolo_head(filters_list, in_filters):
     m = nn.Sequential(
         conv2d(in_filters, filters_list[0], kernel_size=3),
@@ -99,14 +89,12 @@ def yolo_head(filters_list, in_filters):
     return m
 
 
-'''
-----------------------------------------------------
-#===================================================
-YoloBody：
-    backbone + neck
-===================================================# 
-----------------------------------------------------
-'''
+# ----------------------------------------------------
+# #===================================================
+# YoloBody：
+#     backbone + neck
+# ===================================================#
+# ----------------------------------------------------
 class YoloBody(nn.Module):
     def __init__(self, num_anchors, num_classes):
         super(YoloBody, self).__init__()
