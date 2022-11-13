@@ -22,12 +22,12 @@ def yolo_decode(output):
 # ===================================================#
 # ----------------------------------------------------
 class Yolo_Layer(nn.Module):
-    '''
+    """
     anchor_mask: 不同网格大小anchor的索引
     anchor: 先验框
     stride: 原图上网格的宽高尺寸
     scale_x_y: 缩放因子，默认为1
-    '''
+    """
     def __init__(self, anchor_mask=[], num_classes=80, anchors=[], num_anchors=9, stride=32, scale_x_y=1):
         super(Yolo_Layer, self).__init__()
         # 注意：现在以[6, 7, 8]为例
