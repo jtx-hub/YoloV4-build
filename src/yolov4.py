@@ -5,11 +5,11 @@ from collections import OrderedDict
 from CSPDarknet import *
 
 
-'''
-#===================================================
-CBL模块:CONV+BN+LeakyRelu
-===================================================# 
-'''
+
+# #===================================================
+# CBL模块:CONV+BN+LeakyRelu
+# ===================================================#
+
 def conv2d(filter_in, filter_out, kernel_size, stride=1):
     padding = (kernel_size-1)//2 if kernel_size else 0
     return nn.Sequential(OrderedDict([
@@ -19,11 +19,11 @@ def conv2d(filter_in, filter_out, kernel_size, stride=1):
                          ]))
 
 
-'''
-#===================================================
-SPP模块:不同尺寸的池化后堆叠
-===================================================# 
-'''
+
+# #===================================================
+# SPP模块:不同尺寸的池化后堆叠
+# ===================================================#
+
 class SpatialPyramidPooling(nn.Module):
     def __init__(self, pool_sizes=[5,9,13]):
         super(SpatialPyramidPooling, self).__init__()
@@ -36,11 +36,11 @@ class SpatialPyramidPooling(nn.Module):
         return features
 
 
-'''
-#===================================================
-卷积 + 上采样
-===================================================# 
-'''
+
+# #===================================================
+# 卷积 + 上采样
+# ===================================================#
+
 class Upsample(nn.Module):
     def __init__(self, in_channels, out_channels):
         super(Upsample, self).__init__()
