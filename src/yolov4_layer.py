@@ -47,7 +47,9 @@ def yolo_decode(output, num_classes, anchors, num_anchors, scale_x_y):
     by = by_sig + grid_y
 
     for i in range(num_anchors): # i:[0,1,2]
+        # i表示anchor索引
         bw = bw_exp[:,i,:,:] * anchors[i*2]
+        # anchors有6个元素，两两一对儿
         bh = bh_exp[:,i,:,:] * anchors[i*2+1]
 
     # 相对位置,增加一个维度1(1,3,19,19,1)
