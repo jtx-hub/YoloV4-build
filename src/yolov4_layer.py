@@ -1,13 +1,70 @@
 import torch.nn as nn
+import torch
 
 
-def yolo_decode(output):
+# output(B,A*n_ch,H,W) -> (B,A,H,W,n_ch)
+def yolo_decode(output, num_classes, anchors, num_anchors, scale_x_y):
     device = None
     cuda_check = output.is_cuda
+    # 选择gpu
     if cuda_check:
         device = output.get_device()
 
-        
+    # output顺序转换
+    A = num_anchors
+    n_ch = 4+1+num_classes
+    B = output.size(0)
+    H = output.size(2)
+    W = output.size(3)
+    # permute()交换顺序，contiguous()保证内存连续
+    output = output.view(B, A, n_ch, H, W).permute(0, 1, 3, 4, 2).contiguous()
+
+    # 取数
+    tx, ty = output[..., 0], output[..., 1]
+    th, tw = output[..., 2], output[..., 3]
+
+    det_conf = output[..., 4]
+    cls_conf = output[..., 5:]
+
+    # 计算bx，by，bh，bw, conf, cls
+    bx_sig = torch.sigmoid(tx)
+    by_sig = torch.sigmoid(ty)
+
+    # scale_x_y=0或1，检测目标包含大小物体=0，小物体较多=1(相当于没有)
+    bw_exp = torch.exp(tw) * scale_x_y - 0.5 * (scale_x_y - 1)
+    bh_exp = torch.exp(th) * scale_x_y - 0.5 * (scale_x_y - 1)
+
+    # obj，cls也要sigmod()
+    det_conf = torch.sigmoid(det_conf)
+    cls_conf = torch.sigmoid(cls_conf)
+
+    # 构造网格，网格序号表示, 例：[1,3,19,19]
+    grid_x = torch.arange(W, dtype=torch.float).repeat(1,3,W,1).to(device)
+    # 行列互换
+    grid_y = torch.arange(H, dtype=torch.float).repeat(1,3,H,1).permute(0,1,3,2).to(device)
+
+    bx = bx_sig + grid_x
+    by = by_sig + grid_y
+
+    for i in range(num_anchors): # i:[0,1,2]
+        bw = bw_exp[:,i,:,:] * anchors[i*2]
+        bh = bh_exp[:,i,:,:] * anchors[i*2+1]
+
+    # 相对位置,增加一个维度1(1,3,19,19,1)
+    bx = (bx/W).unsqueeze(-1)
+    by = (by/H).unsqueeze(-1)
+    bw = (bw/W).unsqueeze(-1)
+    bh = (bh/H).unsqueeze(-1)
+
+    # (b,a,h,w,1)->(b,a,h,w,4)->(b,a*h*w,4)
+    boxes = torch.cat((bx,by,bw,bh),dim=1).reshape(B, A*H*W, 4)
+    det_conf = det_conf.unsqueeze(-1).reshape(B, A*H*W, 1)
+    cls_conf = cls_conf.reshape(B, A*H*W, num_classes)
+    # cat
+    outputs = torch.cat([boxes, det_conf, cls_conf], dim=1)
+
+    return outputs
+
 
 # ----------------------------------------------------
 # #===================================================
