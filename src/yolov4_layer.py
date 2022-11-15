@@ -1,5 +1,6 @@
 import torch.nn as nn
 import torch
+import numpy as np
 
 
 # output(B,A*n_ch,H,W) -> (B,A,H,W,n_ch)
@@ -21,19 +22,17 @@ def yolo_decode(output, num_classes, anchors, num_anchors, scale_x_y):
 
     # 取数
     tx, ty = output[..., 0], output[..., 1]
-    th, tw = output[..., 2], output[..., 3]
+    tw, th = output[..., 2], output[..., 3]
 
     det_conf = output[..., 4]
     cls_conf = output[..., 5:]
 
     # 计算bx，by，bh，bw, conf, cls
-    bx_sig = torch.sigmoid(tx)
-    by_sig = torch.sigmoid(ty)
-
+    bx = torch.sigmoid(tx)
+    by = torch.sigmoid(ty)
     # scale_x_y=0或1，检测目标包含大小物体=0，小物体较多=1(相当于没有)
-    bw_exp = torch.exp(tw) * scale_x_y - 0.5 * (scale_x_y - 1)
-    bh_exp = torch.exp(th) * scale_x_y - 0.5 * (scale_x_y - 1)
-
+    bw = torch.exp(tw)*scale_x_y-0.5*(scale_x_y-1)
+    bh = torch.exp(th)*scale_x_y-0.5*(scale_x_y-1)
     # obj，cls也要sigmod()
     det_conf = torch.sigmoid(det_conf)
     cls_conf = torch.sigmoid(cls_conf)
@@ -43,14 +42,14 @@ def yolo_decode(output, num_classes, anchors, num_anchors, scale_x_y):
     # 行列互换
     grid_y = torch.arange(H, dtype=torch.float).repeat(1,3,H,1).permute(0,1,3,2).to(device)
 
-    bx = bx_sig + grid_x
-    by = by_sig + grid_y
+    bx += grid_x
+    by += grid_y
 
     for i in range(num_anchors): # i:[0,1,2]
         # i表示anchor索引
-        bw = bw_exp[:,i,:,:] * anchors[i*2]
+        bw[:,i,:,:] *= anchors[i*2]
         # anchors有6个元素，两两一对儿
-        bh = bh_exp[:,i,:,:] * anchors[i*2+1]
+        bh[:,i,:,:] *= anchors[i*2+1]
 
     # 相对位置,增加一个维度1(1,3,19,19,1)
     bx = (bx/W).unsqueeze(-1)
@@ -59,11 +58,11 @@ def yolo_decode(output, num_classes, anchors, num_anchors, scale_x_y):
     bh = (bh/H).unsqueeze(-1)
 
     # (b,a,h,w,1)->(b,a,h,w,4)->(b,a*h*w,4)
-    boxes = torch.cat((bx,by,bw,bh),dim=1).reshape(B, A*H*W, 4)
+    boxes = torch.cat((bx,by,bw,bh),dim=-1).reshape(B, A*H*W, 4)
     det_conf = det_conf.unsqueeze(-1).reshape(B, A*H*W, 1)
     cls_conf = cls_conf.reshape(B, A*H*W, num_classes)
     # cat
-    outputs = torch.cat([boxes, det_conf, cls_conf], dim=1)
+    outputs = torch.cat([boxes, det_conf, cls_conf], dim=-1)
 
     return outputs
 
@@ -92,7 +91,7 @@ class Yolo_Layer(nn.Module):
         self.stride = stride
         self.scale_x_y = scale_x_y
 
-    def foward(self, output):
+    def forward(self, output):
         if self.training:
             return output
 
@@ -105,6 +104,6 @@ class Yolo_Layer(nn.Module):
 
         # decode
         # output->(B, A*n_ch, H, W)->(1, 3*(5+80), 19, 19)
-        data = yolo_decode(self, output, self.num_classes, masked_anchors, len(self.anchor_mask), scale_x_y=self.scale_x_y)
+        data = yolo_decode(output, self.num_classes, masked_anchors, len(self.anchor_mask), scale_x_y=self.scale_x_y)
 
         return data

@@ -5,7 +5,8 @@ import math
 import cv2
 
 
-def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
+def plot_boxes_cv2(img_path, boxes, savename=None, class_names=None, color=None):
+    img = cv2.imread(img_path)
     img = np.copy(img)
     colors = np.array([[1, 0, 1], [0, 0, 1], [0, 1, 1], [0, 1, 0], [1, 1, 0], [1, 0, 0]], dtype=np.float32)
 

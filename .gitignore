@@ -3,4 +3,5 @@ data
 pth
 others
 work_dir
+results
 **/__pycache__

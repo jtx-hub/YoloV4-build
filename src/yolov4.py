@@ -24,7 +24,7 @@ class SpatialPyramidPooling(nn.Module):
         super(SpatialPyramidPooling, self).__init__()
         self.maxpools = nn.ModuleList([nn.MaxPool2d(kernel_size=pool_size, stride=1, padding=pool_size//2) for pool_size in pool_sizes])
 
-    def foward(self, x):
+    def forward(self, x):
         features = [maxpool(x) for maxpool in self.maxpools[::-1]]
         features = torch.cat(features+[x], dim=1)
 
@@ -44,7 +44,7 @@ class Upsample(nn.Module):
             nn.Upsample(scale_factor=2, mode='nearest')
         )
 
-    def foward(self, x):
+    def forward(self, x):
         x = self.upsample(x)
         return x
 
@@ -124,14 +124,16 @@ class YoloBody(nn.Module):
         # 这里cbl包含一次下采样
         self.down_sample1 = conv2d(128, 256, 3, stride=2)
         self.make_five_conv3 = make_five_conv([256, 512] ,512)
-        self.yolo_head2 = yolo_head([512, final_out_filter2], 256)
+        final_out_filter1 = num_anchors * (5 + num_classes)
+        self.yolo_head2 = yolo_head([512, final_out_filter1], 256)
 
         # 5
         self.down_sample2 = conv2d(256, 512, 3, stride=2)
         self.make_five_conv4 = make_five_conv([512, 1024], 1024)
-        self.yolo_head1 = yolo_head([1024, final_out_filter2], 512)
+        final_out_filter0 = num_anchors * (5 + num_classes)
+        self.yolo_head1 = yolo_head([1024, final_out_filter0], 512)
 
-    def foward(self, x):
+    def forward(self, x):
         x2, x1, x0 = self.backbone(x)
         # 1
         P5 = self.conv1(x0)
@@ -140,21 +142,26 @@ class YoloBody(nn.Module):
         # 2
         P5_upsample = self.upsample1(P5)
         P4 = self.conv_for_P4(x1)
-        P4 = torch.cat([P4, P5_upsample], dim=1)
-        P4 = self.make_five_conv(P4)
+        P4 = torch.cat([P4, P5_upsample], axis=1)
+        P4 = self.make_five_conv1(P4)
         # 3
         P4_upsample = self.upsample2(P4)
         P3 = self.conv_for_P3(x2)
-        P3 = torch.cat([P3, P4_upsample], dim=1)
+        P3 = torch.cat([P3, P4_upsample], axis=1)
         P3 = self.make_five_conv2(P3)
         # 4
         P3_downsample = self.down_sample1(P3)
-        P4 = torch.cat([P4, P3_downsample], dim=1)
+        P4 = torch.cat([P3_downsample, P4], axis=1)
+        # 错误！！！
+        # P4 = torch.cat([P4, P3_downsample], axis=1)
         P4 = self.make_five_conv3(P4)
         # 5
         P4_downsample = self.down_sample2(P4)
-        P5 = torch.cat([P5, P4_downsample], dim=1)
-        P5 = self.make_five_conv3(P5)
+        # cat[]的顺序有别
+        P5 = torch.cat([P4_downsample, P5], dim=1)
+        # 错误！！！
+        # P5 = torch.cat([ P5,P4_downsample], dim=1)
+        P5 = self.make_five_conv4(P5)
 
         out2 = self.yolo_head3(P3)
         out1 = self.yolo_head2(P4)
@@ -163,11 +170,9 @@ class YoloBody(nn.Module):
         return out0, out1, out2
 
 
+
+
 if __name__ == "__main__":
     coco_weights_path = '../pth/yolo4_weights_my.pth'
     model = YoloBody(3, 80)
     load_model_pth(model, coco_weights_path)
-
-
-
-

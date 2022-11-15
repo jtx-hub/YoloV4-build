@@ -136,7 +136,7 @@ class CSPDarkNet(nn.Module):
                 m.bias.data.zero_()
 
     # 前向传播
-    def foward(self, x):
+    def forward(self, x):
         x = self.conv1(x)
         x = self.stages[0](x)
         x = self.stages[1](x)
@@ -199,6 +199,3 @@ if __name__ == "__main__":
     # CoCo数据集的预训练权重
     coco_weights_path = '../pth/yolo4_weights_my.pth'
     backbone = darknet53(coco_weights_path)
-
-
-
