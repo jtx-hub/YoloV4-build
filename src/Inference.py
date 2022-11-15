@@ -1,4 +1,6 @@
 import torch
+import numpy as np
+import cv2 as cv
 from yolov4 import *
 
 # ----------------------------------------------------
@@ -43,6 +45,37 @@ class Inference(object):
 
         print("{} model anchors and classes loaded!".format(self.model_path))
 
+    # 导入图片
+    def detect_img(self, img_path):
+        img = cv.imread(img_path)
+        h, w, _ = img.shape
+        img = cv.resize(img, (608, 608))
+        img = cv.cvt2Color(img, cv.COLOR_BGR2RGB)
+        img = np.array(img, dtype=float)
+        # 归一化，且通道调换为（channel，h，w）
+        img = np.transpose(img/255.0, (2,0,1))
+        # 增加维度（1，channel，h，w）
+        img = np.asarray([img])
+
+        with torch.no_grad():
+            img = torch.from_numpy(img)
+            if self.cuda:
+                img = img.cuda()
+
+        outputs = self.net(img)
+
+        output_list = []
+        for i in range(3):
+            output_list.append(self.yolo_decodes[i](outputs[i]))
+        output = torch.cat(output_list, dim=1)
+
+        # 非极大值抑制（没有编写）
+        batch_detections = non_max_suppression(output, len(self.class_names),
+                                               conf_thres=self.confidence,
+                                               nms_thres=0.1)
+        boxes = [box.cpu().numpy() for box in batch_detections]
+        print(boxes[0])
+        return boxes[0]
 
 
 
@@ -56,6 +89,15 @@ if __name__ == "__main__":
         "confidence": 0.4,
         "cuda": True
     }
+
+    model = Inference(**params)
+    class_names = load_clas_names(params['classes_path'])
+    img_path = ''
+    boxes = model.detect_image(img_path)
+    # 画框
+    plot_boxes_cv2(image_src, boxes, savename='output3.jpg', class_names=class_names)
+
+
 
 
 
