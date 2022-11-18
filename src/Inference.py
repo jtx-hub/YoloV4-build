@@ -100,7 +100,7 @@ class Inference(object):
         batch_detections = non_max_suppression(output, len(self.classes_names),conf_thres=self.confidence, nms_thres=0.1)
 
         boxes = [box.cpu().numpy() for box in batch_detections]
-        # print(boxes[0])
+        print(boxes[0])
         return boxes[0]
 
 
