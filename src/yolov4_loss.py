@@ -3,6 +3,86 @@ import torch.nn as nn
 import numpy as np
 
 
+# 范围切割函数，不高于t+m，不低于t-m
+def clip_by_tensor(t, t_min, t_max):
+    t = t.float()
+    results = (t >= t_min).float() * t + (t < t_min).float() * t_min
+    results = (t > t_max).float() * t_max + (t <= t_max).float() * results
+    return results
+
+
+# 平滑标签(目的是让标签不绝对的=1或=0，不过分依赖于标注数据，若数据标注很好也可不用)
+def smooth_labels(y_true, label_smoothing, num_classes):
+    return y_true * (1.0 - label_smoothing) + label_smoothing/num_classes
+
+
+# 均值损失
+def MESLoss(pred, target):
+    return  (pred - target) ** 2
+
+
+# 二分类交叉熵
+def BCELoss(pred,target):
+    epsilon = 1e-7
+    # 防止log出现问题
+    pred = clip_by_tensor(pred, epsilon, 1.0 - epsilon)
+    output = -target * torch.log(pred) - (1.0 - target) * torch.log(1.0 - pred)
+    return output
+
+
+# 实现细节以后还需仔细研究？？？？？？？？？？
+def box_ciou(b1, b2):
+    """
+    输入为：
+    ----------
+    b1: tensor, shape=(batch, feat_w, feat_h, anchor_num, 4), xywh
+    b2: tensor, shape=(batch, feat_w, feat_h, anchor_num, 4), xywh
+
+    返回为：
+    -------
+    ciou: tensor, shape=(batch, feat_w, feat_h, anchor_num, 1)
+    """
+    # 求出预测框左上角右下角
+    b1_xy = b1[..., :2]
+    b1_wh = b1[..., 2:4]
+    b1_wh_half = b1_wh / 2.
+    b1_mins = b1_xy - b1_wh_half
+    b1_maxes = b1_xy + b1_wh_half
+    # 求出真实框左上角右下角
+    b2_xy = b2[..., :2]
+    b2_wh = b2[..., 2:4]
+    b2_wh_half = b2_wh / 2.
+    b2_mins = b2_xy - b2_wh_half
+    b2_maxes = b2_xy + b2_wh_half
+
+    # 求真实框和预测框所有的iou
+    intersect_mins = torch.max(b1_mins, b2_mins)
+    intersect_maxes = torch.min(b1_maxes, b2_maxes)
+    intersect_wh = torch.max(intersect_maxes - intersect_mins, torch.zeros_like(intersect_maxes))
+    intersect_area = intersect_wh[..., 0] * intersect_wh[..., 1]
+    b1_area = b1_wh[..., 0] * b1_wh[..., 1]
+    b2_area = b2_wh[..., 0] * b2_wh[..., 1]
+    union_area = b1_area + b2_area - intersect_area
+    iou = intersect_area / torch.clamp(union_area, min=1e-6)
+
+    # 计算中心的差距
+    center_distance = torch.sum(torch.pow((b1_xy - b2_xy), 2), axis=-1)
+
+    # 找到包裹两个框的最小框的左上角和右下角
+    enclose_mins = torch.min(b1_mins, b2_mins)
+    enclose_maxes = torch.max(b1_maxes, b2_maxes)
+    enclose_wh = torch.max(enclose_maxes - enclose_mins, torch.zeros_like(intersect_maxes))
+    # 计算对角线距离
+    enclose_diagonal = torch.sum(torch.pow(enclose_wh, 2), axis=-1)
+    ciou = iou - 1.0 * (center_distance) / torch.clamp(enclose_diagonal, min=1e-6)
+
+    v = (4 / (math.pi ** 2)) * torch.pow((torch.atan(b1_wh[..., 0] / torch.clamp(b1_wh[..., 1], min=1e-6)) - torch.atan(
+        b2_wh[..., 0] / torch.clamp(b2_wh[..., 1], min=1e-6))), 2)
+    alpha = v / torch.clamp((1.0 - iou + v), min=1e-6)
+    ciou = ciou - alpha * v
+    return ciou
+
+
 
 class YoloLoss(nn.Module):
     def __init__(self, anchors, num_classes, img_size, label_smooth=0, cuda=True):
@@ -23,30 +103,6 @@ class YoloLoss(nn.Module):
         self.lambda_cls = 1.0
         self.lambda_loc = 1.0
         self.cuda = cuda
-
-    def forward(self, input, targets=None):
-        # input:3*(5+num_classes),w,h
-        # 多少张图片
-        bs = input.size(0)
-
-        in_h = input.size(2)
-        in_w = input.size(3)
-
-        # 特征图的一个特征点对应原图多少个像素
-        stride_h = self.img_size[1]/in_h
-        stride_w = self.img_size[0]/in_w
-
-        # 计算先验框在特征图上的宽高
-        scaled_anchors = [(a_w/stride_w, a_h/stride_h) for a_w, a_h in self.anchors]
-
-        # 调整模型预测输出格式
-        prediction = input.view(bs, int(self.num_anchors/3), self.bbox_attrs, in_h, in_w).permute(0,1,3,4,2).contiguous()
-
-
-        # build_target构建流程
-
-
-
 
 
     def get_target(self, target, anchors, in_w, in_h):
@@ -188,5 +244,36 @@ class YoloLoss(nn.Module):
                     noobj_mask[i][anch_iou > self.ignore_threshold] = 0
 
         return noobj_mask, pred_boxes
+
+
+    def forward(self, input, targets=None):
+        # input:3*(5+num_classes),w,h
+        # 多少张图片
+        bs = input.size(0)
+
+        in_h = input.size(2)
+        in_w = input.size(3)
+
+        # 特征图的一个特征点对应原图多少个像素
+        stride_h = self.img_size[1]/in_h
+        stride_w = self.img_size[0]/in_w
+
+        # 计算先验框在特征图上的宽高
+        scaled_anchors = [(a_w/stride_w, a_h/stride_h) for a_w, a_h in self.anchors]
+
+        # 调整模型预测输出格式
+        prediction = input.view(bs, int(self.num_anchors/3), self.bbox_attrs, in_h, in_w).permute(0,1,3,4,2).contiguous()
+
+        # build_target1构建流程（填充掩码+正样本）
+        
+        # build_target2构建流程（填充负样本+decode）
+
+
+
+
+
+
+
+
 
 
