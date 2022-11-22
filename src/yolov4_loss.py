@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import math
 
 
 # 范围切割函数，不高于t+m，不低于t-m
@@ -28,6 +29,35 @@ def BCELoss(pred,target):
     pred = clip_by_tensor(pred, epsilon, 1.0 - epsilon)
     output = -target * torch.log(pred) - (1.0 - target) * torch.log(1.0 - pred)
     return output
+
+
+# iou计算
+def iou(_box_a, _box_b):
+    b1_x1, b1_x2 = _box_a[:, 0] - _box_a[:, 2] / 2, _box_a[:, 0] + _box_a[:, 2] / 2
+    b1_y1, b1_y2 = _box_a[:, 1] - _box_a[:, 3] / 2, _box_a[:, 1] + _box_a[:, 3] / 2
+    b2_x1, b2_x2 = _box_b[:, 0] - _box_b[:, 2] / 2, _box_b[:, 0] + _box_b[:, 2] / 2
+    b2_y1, b2_y2 = _box_b[:, 1] - _box_b[:, 3] / 2, _box_b[:, 1] + _box_b[:, 3] / 2
+    box_a = torch.zeros_like(_box_a)
+    box_b = torch.zeros_like(_box_b)
+    box_a[:, 0], box_a[:, 1], box_a[:, 2], box_a[:, 3] = b1_x1, b1_y1, b1_x2, b1_y2
+    box_b[:, 0], box_b[:, 1], box_b[:, 2], box_b[:, 3] = b2_x1, b2_y1, b2_x2, b2_y2
+    A = box_a.size(0)
+    B = box_b.size(0)
+    max_xy = torch.min(box_a[:, 2:].unsqueeze(1).expand(A, B, 2),
+                       box_b[:, 2:].unsqueeze(0).expand(A, B, 2))
+    min_xy = torch.max(box_a[:, :2].unsqueeze(1).expand(A, B, 2),
+                       box_b[:, :2].unsqueeze(0).expand(A, B, 2))
+    inter = torch.clamp((max_xy - min_xy), min=0)
+
+    inter = inter[:, :, 0] * inter[:, :, 1]
+    # 计算先验框和真实框各自的面积
+    area_a = ((box_a[:, 2]-box_a[:, 0]) *
+              (box_a[:, 3]-box_a[:, 1])).unsqueeze(1).expand_as(inter)  # [A,B]
+    area_b = ((box_b[:, 2]-box_b[:, 0]) *
+              (box_b[:, 3]-box_b[:, 1])).unsqueeze(0).expand_as(inter)  # [A,B]
+    # 求IOU
+    union = area_a + area_b - inter
+    return inter / union  # [A,B]
 
 
 # 实现细节以后还需仔细研究？？？？？？？？？？
@@ -104,6 +134,65 @@ class YoloLoss(nn.Module):
         self.lambda_loc = 1.0
         self.cuda = cuda
 
+    def forward(self, input, targets=None):
+        # input:3*(5+num_classes),w,h
+        # 多少张图片
+        bs = input.size(0)
+
+        in_h = input.size(2)
+        in_w = input.size(3)
+
+        # 特征图的一个特征点对应原图多少个像素
+        stride_h = self.img_size[1] / in_h
+        stride_w = self.img_size[0] / in_w
+
+        # 计算先验框在特征图上的宽高
+        scaled_anchors = [(a_w / stride_w, a_h / stride_h) for a_w, a_h in self.anchors]
+
+        # 调整模型预测输出格式
+        prediction = input.view(bs, int(self.num_anchors / 3), self.bbox_attrs, in_h, in_w).permute(0, 1, 3, 4,
+                                                                                                    2).contiguous()
+
+        # decode
+        conf = torch.sigmoid(prediction[..., 4])
+        pred_cls = torch.sigmoid(prediction[..., 5:])
+
+        # build_target1构建流程（填充掩码+正样本）
+        mask, noobj_mask, t_box, tconf, tcls, box_loss_scale_x, box_loss_scale_y = self.get_target(targets, scaled_anchors, in_w, in_h)
+        # build_target2构建流程（填充负样本+decode）
+        noobj_mask, pred_boxes_for_ciou = self.get_ignore(prediction, targets, scaled_anchors, in_w, in_h, noobj_mask)
+
+        # 调用cuda
+        if self.cuda:
+            mask, noobj_mask = mask.cuda(), noobj_mask.cuda()
+            box_loss_scale_x, box_loss_scale_y = box_loss_scale_x.cuda(), box_loss_scale_y.cuda()
+            tconf, tcls = tconf.cuda(), tcls.cuda()
+            pred_boxes_for_ciou = pred_boxes_for_ciou.cuda()
+            t_box = t_box.cuda()
+
+        # CIOU损失计算
+        box_loss_scale = 2 - box_loss_scale_x * box_loss_scale_y
+        # 利用掩码找出物体1，[1，3，19，19，4] --> [5,4]
+        ciou = box_ciou(pred_boxes_for_ciou[mask.bool()], t_box[mask.bool()])
+        loss_ciou = 1 - ciou
+        # 大目标和小目标均衡，小目标的权重更大
+        loss_ciou = loss_ciou * box_loss_scale[mask.bool()]
+        loss_loc = torch.sum(loss_ciou / bs)
+
+        # 置信度loss计算（正样本做交叉熵损失 + 负样本做交叉熵）
+        loss_conf = torch.sum(BCELoss(conf, mask) * mask / bs) + torch.sum(BCELoss(conf, mask) * noobj_mask / bs)
+        # print(smooth_labels(tcls[mask == 1],self.label_smooth,self.num_classes))
+
+        # 分类loss计算
+        loss_cls = torch.sum(
+            BCELoss(pred_cls[mask == 1], smooth_labels(tcls[mask == 1], self.label_smooth, self.num_classes)) / bs)
+        # print(loss_loc,loss_conf,loss_cls)
+
+        # 总体loss
+        loss = loss_conf * self.lambda_conf + loss_cls * self.lambda_cls + loss_loc * self.lambda_loc
+
+        return loss, loss_conf.item(), loss_cls.item(), loss_loc.item()
+
 
     def get_target(self, target, anchors, in_w, in_h):
         bs = len(target)
@@ -142,8 +231,8 @@ class YoloLoss(nn.Module):
                 # 计算IOU
                 # 先将gt_box和anchors移动到0坐标处
                 gt_box = torch.FloatTensor(np.array([0,0,gw,gh])).unsqueeze(0)
-                anchor_shapes = torch.FloatTensor(np.concatenate(np.zeros(self.num_anchors, 2), np.array(anchors),1))
-                anchor_iou = bbox_iou(gt_box, anchor_shapes)
+                anchor_shapes = torch.FloatTensor(np.concatenate((np.zeros((self.num_anchors, 2)), np.array(anchors)),1))
+                anchor_iou = box_ciou(gt_box, anchor_shapes)
 
                 # 找到对应的head
                 best_iou = np.argmax(anchor_iou)
@@ -170,7 +259,7 @@ class YoloLoss(nn.Module):
                     # 物体置信度
                     tconf[b, best_iou, gj, gi] = 1
                     # 种类
-                    tcls[b, best_iou, gj, int(target)[b][t, 4]] = 1
+                    tcls[b, best_iou, gj, int(target[b][t, 4])] = 1
                 else:
                     print("Step {0} out of bound".format(b))
 
@@ -182,7 +271,7 @@ class YoloLoss(nn.Module):
         return mask, noobj_mask, t_box, tconf, tcls, box_loss_scale_x, box_loss_scale_y
 
 
-    def get_ignore(self,prediction, scaled_anchors, target, in_w, in_h, noobj_mask):
+    def get_ignore(self, prediction, target, scaled_anchors, in_w, in_h, noobj_mask):
         # target=[1, m ,5], m指多少个gt框，5表示gx gy gw gh cls
         bs = len(target)
 
@@ -193,8 +282,8 @@ class YoloLoss(nn.Module):
         # decode
         x = torch.sigmoid(prediction[..., 0])
         y = torch.sigmoid(prediction[..., 1])
-        w = torch.sigmoid(prediction[..., 2])
-        h = torch.sigmoid(prediction[..., 3])
+        w = prediction[..., 2]  # Width
+        h = prediction[..., 3]
 
         # 获取torch的类型
         FloatTensor = torch.cuda.FloatTensor if x.is_cuda else torch.FloatTensor
@@ -206,15 +295,15 @@ class YoloLoss(nn.Module):
         grid_y = torch.linspace(0, in_h-1, in_h).repeat(in_h, 1).t().repeat(int(bs*self.num_anchors/3), 1, 1)\
                                                                         .view(y.shape).type(FloatTensor)
         # [[w0,h0],...,[w2,h2]] ———> [[w0,...,2]]和[[h0,...,h2]]???????????????????????????
-        anchor_w = FloatTensor(scaled_anchors).index_select(1, LongTensor[0])
-        anchor_h = FloatTensor(scaled_anchors).index_select(1, LongTensor[1])
+        anchor_w = FloatTensor(scaled_anchors).index_select(1, LongTensor([0]))
+        anchor_h = FloatTensor(scaled_anchors).index_select(1, LongTensor([1]))
 
         anchor_w = anchor_w.repeat(bs, 1).repeat(1, 1, in_w*in_h).view(w.shape)
         anchor_h = anchor_h.repeat(bs, 1).repeat(1, 1, in_w*in_h).view(h.shape)
 
         # DECODE操作
         # 构造[1,3,19,19,4]
-        pred_boxes = FloatTensor(prediction[..., 4].shape)
+        pred_boxes = FloatTensor(prediction[..., :4].shape)
         pred_boxes[..., 0] = x + grid_x
         pred_boxes[..., 1] = y + grid_y
         pred_boxes[..., 2] = torch.exp(w) * anchor_w
@@ -233,40 +322,19 @@ class YoloLoss(nn.Module):
                 gy = target[i][:, 1:2] * in_h
                 gw = target[i][:, 2:3] * in_w
                 gh = target[i][:, 3:4] * in_h
-                gt_box = torch.FloatTensor(np.concatenate([gx, gy, gw, gh])).type(FloatTensor)
+                gt_box = torch.FloatTensor(np.concatenate([gx, gy, gw, gh], -1)).type(FloatTensor)
                 # [m, 3 * 19 * 19]
-                anch_ious = bbox_iou(gt_box, pred_boxes_for_ignore)
+                anch_ious = iou(gt_box, pred_boxes_for_ignore)
 
                 # 遍历每一个框
                 for t in range(target[i].shape[0]):
                     # [3*19*19,]->[3,19,19]
-                    anch_iou = anch_ious.view(pred_boxes[i].size()[:3])
+                    anch_iou = anch_ious[t].view(pred_boxes[i].size()[:3])
                     noobj_mask[i][anch_iou > self.ignore_threshold] = 0
 
         return noobj_mask, pred_boxes
 
 
-    def forward(self, input, targets=None):
-        # input:3*(5+num_classes),w,h
-        # 多少张图片
-        bs = input.size(0)
-
-        in_h = input.size(2)
-        in_w = input.size(3)
-
-        # 特征图的一个特征点对应原图多少个像素
-        stride_h = self.img_size[1]/in_h
-        stride_w = self.img_size[0]/in_w
-
-        # 计算先验框在特征图上的宽高
-        scaled_anchors = [(a_w/stride_w, a_h/stride_h) for a_w, a_h in self.anchors]
-
-        # 调整模型预测输出格式
-        prediction = input.view(bs, int(self.num_anchors/3), self.bbox_attrs, in_h, in_w).permute(0,1,3,4,2).contiguous()
-
-        # build_target1构建流程（填充掩码+正样本）
-        
-        # build_target2构建流程（填充负样本+decode）
 
 
 

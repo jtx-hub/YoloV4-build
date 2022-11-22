@@ -236,6 +236,7 @@ class TrainDataset(Dataset):
         lines = self.train_lines
         n = self.train_batches
         index = index % n
+        # 数据增强
         if self.mosaic:
             if self.flag and (index + 4) < n:
                 img, y = self.get_random_data_with_Mosaic(lines[index:index + 4], self.image_size[0:2])
@@ -245,6 +246,7 @@ class TrainDataset(Dataset):
         else:
             img, y = self.get_random_data(lines[index], self.image_size[0:2])
 
+        # label转换为1为单位的相对位置
         if len(y) != 0:
             # 从坐标转换成0~1的百分比
             boxes = np.array(y[:, :4], dtype=np.float32)
@@ -269,6 +271,7 @@ class TrainDataset(Dataset):
 
 
 # DataLoader中collate_fn使用
+# np[8,3,608,608]
 def train_dataset_collate(batch):
     images = []
     bboxes = []

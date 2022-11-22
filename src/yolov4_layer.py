@@ -72,7 +72,7 @@ def yolo_decode(output, num_classes, anchors, num_anchors, scale_x_y):
 # YoloHead
 # ===================================================#
 # ----------------------------------------------------
-class Yolo_Layer(nn.Module):
+class YoloLayer(nn.Module):
     """
     anchor_mask: 不同网格大小anchor的索引
     anchor: 先验框
