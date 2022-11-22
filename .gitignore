@@ -4,4 +4,5 @@ pth
 others
 work_dir
 results
+src/train_logs
 **/__pycache__
