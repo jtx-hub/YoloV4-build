@@ -1,6 +1,6 @@
 import os
 import sys
-sys.path.append(r'D:\ubuntu_share\yolov4-pytorch1')
+sys.path.append(r'D:\Projects\Git-Hub\Yolov4-build')
 import numpy as np
 import time
 import torch
@@ -318,7 +318,7 @@ def valid(epoch_lis, classes, draw=True, cuda=True, anchors=[]):
 
 def train(cur_epoch, Epoch, cuda=True, anchors=[]):
     #使用tensorboardX来可视化训练指标
-    writer = SummaryWriter(log_dir='train_logs',flush_secs=60)
+    writer = SummaryWriter(log_dir='../logs/train_logs',flush_secs=60)
 
     # 创建模型
     model = YoloBody(len(anchors[0]), num_classes)
@@ -344,7 +344,7 @@ def train(cur_epoch, Epoch, cuda=True, anchors=[]):
     yolo_losses = []
     for i in range(3):
         yolo_losses.append(YoloLoss(np.reshape(anchors, [-1, 2]), num_classes,
-                                    (input_shape[1], input_shape[0]), smoooth_label, cuda=False))
+                                    (input_shape[1], input_shape[0]), smoooth_label, cuda=Cuda))
 
     #lr_scheduler, optimizer = gen_lr_scheduler(lr, cur_epoch, model)
     lr_scheduler, optimizer = gen_burnin_lr_scheduler(lr, cur_batch, model)
@@ -382,6 +382,7 @@ def train(cur_epoch, Epoch, cuda=True, anchors=[]):
                 losses_loc = []
                 losses_conf = []
                 losses_cls = []
+                # 三个head的损失
                 for i in range(3):
                     loss_item = yolo_losses[i](outputs[i], targets)
                     losses.append(loss_item[0])
@@ -398,6 +399,7 @@ def train(cur_epoch, Epoch, cuda=True, anchors=[]):
                 waste_time = time.time() - start_time
                 total_loss += loss
                 cur_step += 1
+
                 #将第五个Epoch开始写入到tensorboard，每一步都写
                 if epoch > 2:
                     writer.add_scalar('total_loss/gpu_batch', loss*Cfg.subdivisions, (epoch * epoch_size + iteration))
@@ -436,7 +438,7 @@ if __name__ == "__main__":
     # 是否使用马赛克数据增强
     mosaic = Cfg.mosaic
     # 用于设定是否使用cuda
-    Cuda = False
+    Cuda = True
     smoooth_label = Cfg.smoooth_label
     # -------------------------------#
     #   Dataloder的使用
