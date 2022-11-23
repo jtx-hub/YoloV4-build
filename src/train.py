@@ -418,6 +418,7 @@ Cfg.check = 'chk'
 Cfg.use_data_loader = True
 Cfg.first_train = True
 
+# 迭代周期
 Cfg.cur_epoch = 0
 Cfg.total_epoch = 80
 Cfg.freeze_mode = False
