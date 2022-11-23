@@ -150,8 +150,7 @@ class YoloLoss(nn.Module):
         scaled_anchors = [(a_w / stride_w, a_h / stride_h) for a_w, a_h in self.anchors]
 
         # 调整模型预测输出格式
-        prediction = input.view(bs, int(self.num_anchors / 3), self.bbox_attrs, in_h, in_w).permute(0, 1, 3, 4,
-                                                                                                    2).contiguous()
+        prediction = input.view(bs, int(self.num_anchors / 3), self.bbox_attrs, in_h, in_w).permute(0, 1, 3, 4, 2).contiguous()
 
         # decode
         conf = torch.sigmoid(prediction[..., 4])
