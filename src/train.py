@@ -226,7 +226,7 @@ def find_pth_by_epoch(epoch):
     return ''
 
 
-def valid(epoch_list, classes, draw=True, cuda=True, anchors=[]):
+def valid(epoch_list, classes, cuda, draw=True, anchors=[]):
     writer = SummaryWriter(log_dir='../logs/valid_logs',flush_secs=60)
     epoch_size_val = num_val // gpu_batch
 
@@ -404,8 +404,7 @@ def train(cur_epoch, Epoch, cuda, anchors=[]):
         print('Epoch:' + str(epoch + 1) + '/' + str(Epoch))
         print('Total Loss: %.4f || Last Loss: %.4f ' % (total_loss / (epoch_size + 1)*Cfg.subdivisions, loss.item()*Cfg.subdivisions))
         print('Saving state, iter:', str(epoch + 1))
-        torch.save(model.state_dict(), '%s/Epoch_%03d_Loss_%.4f.pth' % (Cfg.check,
-        (epoch + 1), total_loss / (epoch_size + 1)*Cfg.subdivisions))
+        torch.save(model.state_dict(), '%s/Epoch_%03d_Loss_%.4f.pth' % (Cfg.check, (epoch + 1), total_loss / (epoch_size + 1)*Cfg.subdivisions))
 
 
 # params
@@ -480,6 +479,6 @@ if __name__ == "__main__":
     pth_path = Cfg.pth_path
 
     if Cfg.valid_mode:
-        valid([50], classes={0: 'car', 1: 'pedestrian'}, draw=Cfg.draw_box, anchors=anchors)
+        valid([50], classes={0: 'car', 1: 'pedestrian'}, cuda=Cuda, draw=Cfg.draw_box, anchors=anchors)
     else:
         train(cur_epoch, total_epoch, cuda=Cuda, anchors=anchors)
