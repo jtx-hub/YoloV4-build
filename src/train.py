@@ -478,3 +478,7 @@ if __name__ == "__main__":
         valid([50], classes={0: 'car', 1: 'pedestrian'}, draw=Cfg.draw_box, anchors=anchors)
     else:
         train(cur_epoch, total_epoch, cuda=Cuda, anchors=anchors)
+
+
+
+
