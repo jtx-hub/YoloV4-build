@@ -1,6 +1,6 @@
 import os
 import sys
-sys.path.append(r'D:\Projects\Git-Hub\Yolov4-build')
+sys.path.append(r'D:\Python_Myscript\Git\Yolov4-build')
 import numpy as np
 import time
 import torch
@@ -18,35 +18,14 @@ from yolov4 import YoloBody
 from yolov4_layer import YoloLayer
 from tqdm import tqdm
 
+from Evaluation.map_eval_pil import compute_map
 from easydict import EasyDict
 from config import Cfg
 # from Evaluation.map_eval_pil import compute_map
 from tensorboardX import SummaryWriter
 from utils.utils import *
-
-
-Cfg.train_data = '../work_dir/my_train.txt'
-Cfg.anchors_path = '../work_dir/yolo_anchors.txt'
-Cfg.classes_path = '../work_dir/my_classes.txt'
-Cfg.pth_path = '../pth/yolo4_weights_my.pth'
-Cfg.check = 'chk'
-
-Cfg.use_data_loader = True
-Cfg.first_train = True
-
-Cfg.cur_epoch = 0
-Cfg.total_epoch = 80
-Cfg.freeze_mode = False
-
-#valid
-Cfg.valid_mode = False
-Cfg.confidence = 0.4
-Cfg.nms_thresh = 0.3
-Cfg.draw_box = True
-Cfg.save_error_miss = True
-Cfg.input_dir = r'../data/object-detection-crowdai'
-Cfg.save_err_mis = False
-
+import warnings
+warnings.filterwarnings("ignore")  #忽略告警
 
 #调用Evaluation模块, 进行map计算和类别准召率计算
 def make_labels_and_compute_map(infos, classes, input_dir, save_err_miss=False):
@@ -239,16 +218,16 @@ def print_model(model):
 
 
 def find_pth_by_epoch(epoch):
-    pth_list = os.listdir('check_point')
+    pth_list = os.listdir('../chk')
     for name in pth_list:
         curpo = name.split('_')[1]
         if curpo == '%03d'%(epoch):
-            return os.path.join('check_point', name)
+            return os.path.join('../chk', name)
     return ''
 
 
-def valid(epoch_lis, classes, draw=True, cuda=True, anchors=[]):
-    writer = SummaryWriter(log_dir='valid_logs',flush_secs=60)
+def valid(epoch_list, classes, cuda, draw=True, anchors=[]):
+    writer = SummaryWriter(log_dir='../logs/valid_logs',flush_secs=60)
     epoch_size_val = num_val // gpu_batch
 
     model = YoloBody(len(anchors[0]), num_classes)
@@ -269,7 +248,7 @@ def valid(epoch_lis, classes, draw=True, cuda=True, anchors=[]):
         gen_val = TestGenerator(gpu_batch, lines[num_train:],
                             (input_shape[0], input_shape[1])).generate()
 
-    for epo in epoch_lis:
+    for epo in epoch_list:
         pth_path = find_pth_by_epoch(epo)
         if not pth_path:
             print('pth_path is error...')
@@ -316,13 +295,12 @@ def valid(epoch_lis, classes, draw=True, cuda=True, anchors=[]):
     return True
 
 
-def train(cur_epoch, Epoch, cuda=True, anchors=[]):
+def train(cur_epoch, Epoch, cuda, anchors=[]):
     #使用tensorboardX来可视化训练指标
     writer = SummaryWriter(log_dir='../logs/train_logs',flush_secs=60)
 
     # 创建模型
     model = YoloBody(len(anchors[0]), num_classes)
-
 
     # 权重裁剪，根据print_model找到裁剪的层
     print_model(model)
@@ -344,7 +322,7 @@ def train(cur_epoch, Epoch, cuda=True, anchors=[]):
     yolo_losses = []
     for i in range(3):
         yolo_losses.append(YoloLoss(np.reshape(anchors, [-1, 2]), num_classes,
-                                    (input_shape[1], input_shape[0]), smoooth_label, cuda=Cuda))
+                                    (input_shape[1], input_shape[0]), smooth_label, cuda=cuda))
 
     #lr_scheduler, optimizer = gen_lr_scheduler(lr, cur_epoch, model)
     lr_scheduler, optimizer = gen_burnin_lr_scheduler(lr, cur_batch, model)
@@ -426,8 +404,34 @@ def train(cur_epoch, Epoch, cuda=True, anchors=[]):
         print('Epoch:' + str(epoch + 1) + '/' + str(Epoch))
         print('Total Loss: %.4f || Last Loss: %.4f ' % (total_loss / (epoch_size + 1)*Cfg.subdivisions, loss.item()*Cfg.subdivisions))
         print('Saving state, iter:', str(epoch + 1))
-        torch.save(model.state_dict(), '%s/Epoch_%03d_Loss_%.4f.pth' % (Cfg.check,
-        (epoch + 1), total_loss / (epoch_size + 1)*Cfg.subdivisions))
+        torch.save(model.state_dict(), '%s/Epoch_%03d_Loss_%.4f.pth' % (Cfg.check, (epoch + 1), total_loss / (epoch_size + 1)*Cfg.subdivisions))
+
+
+# params
+Cfg.train_data = '../work_dir/my_train.txt'
+Cfg.anchors_path = '../work_dir/yolo_anchors.txt'
+Cfg.classes_path = '../work_dir/my_classes.txt'
+Cfg.pth_path = '../pth/yolo4_weights_my.pth'
+Cfg.check = 'chk'
+
+Cfg.use_data_loader = True
+Cfg.first_train = True
+
+# 迭代周期
+Cfg.cur_epoch = 0
+Cfg.total_epoch = 80
+Cfg.freeze_mode = False
+
+#valid
+# 验证时True
+Cfg.valid_mode = False
+# conf小于的过滤
+Cfg.confidence = 0.2
+Cfg.nms_thresh = 0.3
+Cfg.draw_box = False
+Cfg.save_error_miss = False
+Cfg.input_dir = r'../data/object-detection-crowdai'
+Cfg.save_err_mis = False
 
 
 if __name__ == "__main__":
@@ -438,8 +442,8 @@ if __name__ == "__main__":
     # 是否使用马赛克数据增强
     mosaic = Cfg.mosaic
     # 用于设定是否使用cuda
-    Cuda = True
-    smoooth_label = Cfg.smoooth_label
+    Cuda = False
+    smooth_label = Cfg.smooth_label
     # -------------------------------#
     #   Dataloder的使用
     # -------------------------------#
@@ -475,7 +479,7 @@ if __name__ == "__main__":
     pth_path = Cfg.pth_path
 
     if Cfg.valid_mode:
-        valid([50], classes={0: 'car', 1: 'pedestrian'}, draw=Cfg.draw_box, anchors=anchors)
+        valid([50], classes={0: 'car', 1: 'pedestrian'}, cuda=Cuda, draw=Cfg.draw_box, anchors=anchors)
     else:
         train(cur_epoch, total_epoch, cuda=Cuda, anchors=anchors)
 

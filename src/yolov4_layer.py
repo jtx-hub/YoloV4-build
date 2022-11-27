@@ -79,8 +79,8 @@ class YoloLayer(nn.Module):
     stride: 原图上网格的宽高尺寸
     scale_x_y: 缩放因子，默认为1
     """
-    def __init__(self, anchor_mask=[], num_classes=80, anchors=[], num_anchors=9, stride=32, scale_x_y=1):
-        super(Yolo_Layer, self).__init__()
+    def __init__(self, image_size, anchor_mask=[], num_classes=80, anchors=[], num_anchors=9, stride=32, scale_x_y=1):
+        super(YoloLayer, self).__init__()
         # 注意：现在以[6, 7, 8]为例
         self.anchor_mask = anchor_mask
         self.num_classes = num_classes
@@ -91,16 +91,22 @@ class YoloLayer(nn.Module):
         self.stride = stride
         self.scale_x_y = scale_x_y
 
+        self.feature_length = [image_size[0] // 8, image_size[0] // 16, image_size[0] // 32]
+        self.img_size = image_size
+
     def forward(self, output):
         if self.training:
             return output
 
+        in_w = output.size(3)
+        anchor_index = self.anchor_masks[self.feature_length.index(in_w)]
+        stride_w = self.img_size[0] / in_w
         masked_anchors = []
-        for m in self.anchor_mask:
-            masked_anchors += self.anchors[m * self.anchor_step: (m+1) * self.anchor_step]
+        for m in anchor_index:
+            masked_anchors += self.anchors[m * self.anchor_step:(m + 1) * self.anchor_step]
 
         # anchors以像素为单位表示原图先验框的宽高，现在换算成在网格里的宽高（anchor/stride）
-        masked_anchors = [anchor/self.stride for anchor in masked_anchors]
+        self.masked_anchors = [anchor / stride_w for anchor in masked_anchors]
 
         # decode
         # output->(B, A*n_ch, H, W)->(1, 3*(5+80), 19, 19)
